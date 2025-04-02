@@ -1,0 +1,50 @@
+name: Poll Issue #6 from vitalets/github-trending-repos
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Once a day at 00:00 UTC
+  workflow_dispatch:       # Also lets you trigger manually
+
+jobs:
+  check-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and notify if updated
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking issue #6 in vitalets/github-trending-repos..."
+          
+          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/vitalets/github-trending-repos/issues/6 > issue.json
+
+          UPDATED_AT=$(jq -r '.updated_at' issue.json)
+          TITLE=$(jq -r '.title' issue.json)
+          URL=$(jq -r '.html_url' issue.json)
+          BODY=$(jq -r '.body // "[No body]"' issue.json | head -c 300)
+
+          mkdir -p .cache
+          LAST_UPDATE_FILE=".cache/last_update.txt"
+
+          if [ ! -f "$LAST_UPDATE_FILE" ]; then
+            echo "$UPDATED_AT" > "$LAST_UPDATE_FILE"
+            echo "First run – storing timestamp and skipping notify."
+            exit 0
+          fi
+
+          LAST_SEEN=$(cat "$LAST_UPDATE_FILE")
+
+          if [ "$UPDATED_AT" != "$LAST_SEEN" ]; then
+            echo "Update detected! Sending Discord notification..."
+            echo "$UPDATED_AT" > "$LAST_UPDATE_FILE"
+
+            MESSAGE="🛎️ **Issue #6 Updated!**\n📌 *$TITLE*\n🔗 $URL\n📝\n\`\`\`\n$BODY...\n\`\`\`"
+
+            curl -H "Content-Type: application/json" \
+              -X POST \
+              -d "{\"content\": \"$MESSAGE\"}" \
+              "$DISCORD_WEBHOOK"
+          else
+            echo "No updates since last check."
+          fi
